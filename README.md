@@ -1,0 +1,2 @@
+# EBOOKReader_hpprimeapp
+这是一个功能简单但好用的运行于HPPrime计算器上的电子书阅读器

@@ -1,9 +1,8 @@
 py_eval = eval
 from hpprime import *
-from urandom import *
 import math
 
-version="EBOOKReader v0.6.0alpha"
+version="EBOOKReader v0.7.0alpha"
 
 #设置数据读取和初始化
 COLOR_LIST = ["#FFFFFFh","#FF0000h","#FFh","#FF00h","#0h"]
@@ -17,9 +16,6 @@ if temps != "错误:输入无效":
 temps = eval("AFiles(\"TEXT_COLOR\")")
 if temps != "错误:输入无效":
     TEXT_COLOR = temps
-temps = eval("AFiles(\"TEXT_SIZE\")")
-if temps != "错误:输入无效":
-    TEXT_SIZE = int(temps)
 #print ("debug:setting-",BG_COLOR,TEXT_COLOR,TEXT_SIZE)
 
 #主菜单显示
@@ -72,11 +68,7 @@ def parse_ch_structure(paragraph):
 def max_chars():
     y = 225 / (4 * TEXT_SIZE)
     x = 320 / (4 * TEXT_SIZE)
-    if TEXT_SIZE == 6:
-        x+= 2
-    elif TEXT_SIZE == 5:
-        x += 1
-    return math.floor(x),math.floor(y)
+    return math.floor(x),math.floor(y)-1
 
 def build_list(book_name):
     with open(book_name + "_book.txt", 'r', encoding='utf-8') as f:
@@ -185,6 +177,9 @@ def show_text(main_text,floor_text):
     lines = main_text.split('\n')
     y = 0;line_height = int(4 * TEXT_SIZE)
     for para in lines:
+        if para == "":
+            y += line_height
+            continue
         while len(para) > 0:
             line = para[:maxx]
             if line:
@@ -195,7 +190,6 @@ def show_text(main_text,floor_text):
 #图片渲染器
 def draw_imagine(pic_name,size,position):
     
-    eval('G1:= AFiles("' +pic_name+'")')
     weight = int(eval("GROBW_P(G1)"))
     height = int(eval("GROBH_P(G1)"))
     xl=position[0];yt=position[1]
@@ -211,7 +205,7 @@ def draw_imagine(pic_name,size,position):
         eval('RECT_P(G0,0,'+str(yb)+',320,240,'+BG_COLOR+')')
 
 def show_pic(floortext,pic_name):
-    eval("RECT_P(" + BG_COLOR + ")")
+    eval('G1:= AFiles("' +pic_name+'")')
     x = 0;y = 0;size=1
     while True:
         draw_imagine(pic_name,size,[x,y])
@@ -366,12 +360,10 @@ while True:
         elif get_menu == 3:
             eval("MSGBOX(\"EBOOKREADER 一款强大的阅读器 made by CPTPotato 版本："+version+"\")")
         elif get_menu == 2:
-            eval("INPUT({{C,{\"白\",\"红\",\"蓝\",\"绿\",\"黑\"}},{D,{\"小\",\"中\",\"大\"}},{B,{\"白\",\"红\",\"蓝\",\"绿\",\"黑\"}}},\"设置\",{\"字体颜色\",\"字体大小\",\"背景颜色\"},{\"选择\",\"选择\",\"选择\"});")
+            eval("INPUT({{C,{\"白\",\"红\",\"蓝\",\"绿\",\"黑\"}},{B,{\"白\",\"红\",\"蓝\",\"绿\",\"黑\"}}},\"设置\",{\"字体颜色\",\"背景颜色\"},{\"选择\",\"选择\"});")
             TEXT_COLOR = COLOR_LIST[int(eval("C"))-1]
-            TEXT_SIZE = SIZE_LIST[int(eval("D"))-1]
             BG_COLOR = COLOR_LIST[int(eval("B"))-1]
             eval("\""+TEXT_COLOR+"\""+"▶AFiles(\"TEXT_COLOR\")")  
-            eval("\""+str(TEXT_SIZE)+"\""+"▶AFiles(\"TEXT_SIZE\")")  
             eval("\""+BG_COLOR+"\""+"▶AFiles(\"BG_COLOR\")")  
         elif get_menu == 1:
             book_name = choose_book()

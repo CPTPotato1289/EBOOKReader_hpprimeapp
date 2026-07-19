@@ -12,7 +12,7 @@
 5. 注意：单个txt文件大小最大约为0.5MB，更大可能会爆内存。如果爆内存请分册存储。
 ## 2 上传到计算器
 1. clone本仓库
-2. 将仓库内的EBOOKReader.hpappdir去除，将刚才制作好的所有书本文件全部防止到该目录下。注意不要新建子目录！
+2. 将仓库内的EBOOKReader.hpappdir取出，将刚才制作好的所有书本文件全部防止到该目录下。注意不要新建子目录！
 3. 使用HP Connectivity Kit将EBOOKReader.hpappdir上传到计算器
 ## 3 如何使用
 1. 在计算器Apps视图选择EBookReader应用。

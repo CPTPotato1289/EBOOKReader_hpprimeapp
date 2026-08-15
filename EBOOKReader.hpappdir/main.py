@@ -2,7 +2,7 @@ py_eval = eval
 from hpprime import *
 import math
 
-version="EBOOKReader v0.9.0alpha"
+version="EBOOKReader v0.10.1alpha"
 
 #字体大小设置区域如下，按照注释修改
 TEXT_SIZE = 4 #显示的字体大小
@@ -14,24 +14,19 @@ MAX_Y = 14 #每一页显示的行数
 #配色数据读取和初始化
 COLOR_LIST = [
     ['#3C3C3Ch', '#E6E6E6h', '#2C3E3Eh', '#333333h', '#5D4037h'],
-    ['#FBF7F0h', '#1A1A1Ah', '#C7EDCCh', '#F4F6F8h', '#F5E6C8h'],
-    ['#D49A6Ah', '#6A9FB5h', '#E8A87Ch', '#C0392Bh', '#B76E79h']
+    ['#FBF7F0h', '#1A1A1Ah', '#C7EDCCh', '#F4F6F8h', '#F5E6C8h']
 ]
 BG_COLOR = "#FBF7F0h"
 TEXT_COLOR = "#3C3C3Ch"
-LB_COLOR = "#D49A6Ah"
 temps = eval("AFiles(\"BG_COLOR\")")
 if temps != "错误:输入无效":
     BG_COLOR = temps
 temps = eval("AFiles(\"TEXT_COLOR\")")
 if temps != "错误:输入无效":
     TEXT_COLOR = temps
-temps = eval("AFiles(\"LB_COLOR\")")
-if temps != "错误:输入无效":
-    LB_COLOR = temps
-#print ("debug:setting-",BG_COLOR,TEXT_COLOR,LB_COLOR)
+#print ("debug:setting-",BG_COLOR,TEXT_COLOR)
 def max_chars():
-    return MAX_X,MAX_Y-1
+    return MAX_X,MAX_Y
 
 #获取书本列表
 def show_book_list():
@@ -81,13 +76,14 @@ def parse_ch_structure(paragraph):
         return None, None
     text = inner[pos+2:] 
     return num_str, text
-
+#构建索引
 def build_list(book_name):
     with open(book_name + "_book.txt", 'r', encoding='utf-8') as f:
         lines = [line.rstrip('\n') for line in f.readlines()]
         f.close
     maxx, maxy = max_chars()
-    contents = []          
+    contents = []    
+    pictures = []      
     pages = []             
     page_start = None   
     page_end = None      
@@ -146,9 +142,14 @@ def build_list(book_name):
 
         if paragraph.startswith("[pic:"):
             close_current_page()
+            pic_name = paragraph[5:paragraph.find(']')]
+            start_page_before = len(pages)
             for col_start, col_end in split_paragraph_by_chars(paragraph):
                 add_display_line(line_idx, col_start, col_end)
             close_current_page()
+            if len(pages) > start_page_before:
+                page_num = start_page_before + 1
+                pictures.append([pic_name,page_num])
             continue
 
         if paragraph == "":
@@ -169,14 +170,33 @@ def build_list(book_name):
             end_line = len(lines) - 1
         max_col = max(len(lines[end_line]) - 1, 0)
         page[1][1] = min(end_col, max_col)
-    result = {"Contents": contents, "Pages": pages}
-    #print (result['Contents'])
+    result = {"Contents": contents, "Pages": pages,"Pictures": pictures}
+    #print (result['Pictures'])
     with open(book_name + "_list.txt", "w", encoding="utf-8") as f:
         f.write(repr(result))
         f.close
     #print(result)  
     return result
-
+#行号映射页码
+def find_page_by_coord(pages, line_idx, col_idx):
+    lo, hi = 0, len(pages) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if pages[mid][0][0] <= line_idx:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    if hi < 0:
+        return None
+    start_line = pages[hi][0][0]
+    end_line = pages[hi][1][0]
+    end_col = pages[hi][1][1]
+    if line_idx < end_line or (line_idx == end_line and col_idx <= end_col):
+        return hi
+    else:
+        if hi + 1 < len(pages) and pages[hi+1][0][0] == line_idx:
+            return hi + 1
+        return None
 #文本渲染器
 def show_text(main_text,floor_text):
     eval("RECT_P(G0,0,0,320,240," + BG_COLOR + ")")
@@ -306,7 +326,7 @@ def start_read(book_name,page):
                 show_str = a+' '+b+'\n'
             for i in range(page_info[0][0]+1,page_info[1][0]):
                 show_str = show_str + lines[i] + '\n'
-            show_str = show_str + '\n' + lines[page_info[1][0]][:(page_info[1][1]+1)]
+            show_str = show_str +  lines[page_info[1][0]][:(page_info[1][1]+1)]
         show_text(show_str,book_name+'  '+str(page+1)+'/'+str(max_page))
         while True:
             key_code = eval("WAIT(0)")
@@ -338,7 +358,7 @@ def show_contents(book_name):
     page = contents_position//per_page
     total_pages = (len(contents) + per_page - 1) // per_page
     while True:
-        show_str = 'CHOOSE(N,"' + book_name + ' 目录","上一页","下一页","跳转"'
+        show_str = 'CHOOSE(N,"' + book_name + ' 目录('+str(page+1)+'/'+str(total_pages)+')","上一页","下一页","跳转"'
         for i in range(page * per_page,min((page+1)* per_page,len(contents))):
             #print(show_str)
             if not(i == contents_position):
@@ -376,6 +396,136 @@ def show_contents(book_name):
             star_ch = page * per_page + get_choose - 4
             jump_page(book_name,contents[star_ch][1]-1)
             return
+#显示图片列表
+def show_piclist(book_name):
+    list = load_list(book_name)
+    pictures = list["Pictures"]
+    if len(pictures) == 0:
+        eval('MSGBOX("本书无图片！")')
+        return
+    per_page = 10
+    page = 0
+    total_pages = (len(pictures) + per_page - 1) // per_page
+    while True:
+        show_str = 'CHOOSE(N,"' + book_name + ' 图片('+str(page+1)+'/'+str(total_pages)+')","上一页","下一页","跳转"'
+        for i in range(page*per_page,min((page+1)*per_page,len(pictures))):
+            show_str = show_str + ',"P' + str(pictures[i][1])+' '+pictures[i][0] + '"'
+        if eval(show_str+',"返回")') == 0:
+            continue
+        get_choose = int(eval("N"))
+        if get_choose == 1:
+            if not page == 0:
+                page -= 1
+            continue
+        elif get_choose == 2:
+            if not page == total_pages - 1:
+                page+= 1
+            continue
+        elif get_choose == 3:
+            if eval('INPUT(N,"跳转图片列表页码","跳转到","输入范围：1-'+str(total_pages)+'",'+str(page+1)+','+str(page+1)+')') == 0:
+                continue
+            inpage = eval("N")
+            try:
+                inpage = int(inpage)
+            except:
+                eval('MSGBOX("错误的输入！")')
+            if inpage > total_pages or inpage <= 0:
+                eval('MSGBOX("错误的输入！")')
+                continue
+            page = inpage - 1
+        elif get_choose == 4 + min(per_page,len(pictures) - page* per_page):
+            return
+        else:
+            start_pic = page * per_page + get_choose - 4
+            jump_page(book_name,pictures[start_pic][1] - 1)
+#检索文本主函数，返回1based页码列表
+def search_book(book_name, keyword, start_page=0, end_page=None):
+    data = load_list(book_name)
+    pages = data["Pages"]
+    with open(book_name + "_book.txt", 'r', encoding='utf-8') as f:
+        lines = [line.rstrip('\n') for line in f]
+    kw = keyword.strip()
+    if not kw:
+        return []
+    kw_lower = kw.lower()
+    kw_len = len(kw)
+    total_pages = len(pages)
+    if end_page is None or end_page >= total_pages:
+        end_page = total_pages - 1
+    start_page = max(0, start_page)
+    end_page = min(total_pages - 1, end_page)
+    if start_page > end_page:
+        return []
+    start_line = pages[start_page][0][0]  
+    end_line = pages[end_page][1][0] 
+    results = []
+    for line_idx in range(start_line, end_line + 1):
+        line = lines[line_idx]
+        line_lower = line.lower()
+        search_start = 0
+        while True:
+            col_idx = line_lower.find(kw_lower, search_start)
+            if col_idx == -1:
+                break
+            page_idx = find_page_by_coord(pages, line_idx, col_idx)
+            if page_idx is not None and start_page <= page_idx <= end_page:
+                ctx_start = max(0, col_idx - 4)
+                ctx_end = min(len(line), col_idx + kw_len + 4)
+                raw_context = line[ctx_start:ctx_end]
+                kw_start_in_ctx = col_idx - ctx_start
+                kw_end_in_ctx = kw_start_in_ctx + kw_len
+                context = (raw_context[:kw_start_in_ctx] + '*' + raw_context[kw_end_in_ctx:])
+                results.append([page_idx + 1,[line_idx, col_idx, col_idx + kw_len],context])
+            search_start = col_idx + 1
+    return results
+#展示检索结果
+def show_search(book_name, result):
+    if not result:
+        eval('MSGBOX("无结果！")')
+        return
+    per_page = 10
+    page = 0
+    total_pages = (len(result) + per_page - 1) // per_page
+    while True:
+        show_str = 'CHOOSE(N,"' + book_name + ' 检索结果(' + str(page+1) + '/' + str(total_pages) + ')",'
+        show_str += '"上一页","下一页","跳转"'
+        start_idx = page * per_page
+        end_idx = min((page + 1) * per_page, len(result))
+        for i in range(start_idx, end_idx):
+            page_id, pos_info, context = result[i]
+            display = "P" + str(page_id) + " " + context
+            show_str += ',"' + display + '"'
+        show_str += ',"返回"'
+        if eval(show_str + ')') == 0:
+            continue
+        get_choose = int(eval("N"))
+        if get_choose == 1: 
+            if page > 0:
+                page -= 1
+            continue
+        elif get_choose == 2: 
+            if page < total_pages - 1:
+                page += 1
+            continue
+        elif get_choose == 3: 
+            if eval('INPUT(N,"跳转搜索结果页码","跳转到","输入范围：1-'+str(total_pages)+'",'+str(page+1)+','+str(page+1)+')') == 0:
+                continue
+            inpage = eval("N")
+            try:
+                inpage = int(inpage)
+            except:
+                eval('MSGBOX("错误的输入！")')
+                continue
+            if inpage < 1 or inpage > total_pages:
+                eval('MSGBOX("错误的输入！")')
+                continue
+            page = inpage - 1
+        elif get_choose == 4 + (end_idx - start_idx): 
+            return
+        else:  
+            selected_index = start_idx + (get_choose - 4)
+            target_page = result[selected_index][0] - 1   
+            jump_page(book_name, target_page)
 
 while True:
         if eval("CHOOSE(N,\"菜单\",\"选择书本\",\"设置\",\"关于\",\"退出\")") == 0:
@@ -384,37 +534,46 @@ while True:
         if get_menu == 4:
             break
         elif get_menu == 3:
-            eval("MSGBOX(\"EBOOKREADER 一款强大的阅读器 made by CPTPotato 版本："+version+"\")")
+            eval("MSGBOX(\"EBOOKREADER 一款强大的阅读器 运行过程中出现创建变量提示请点击是 made by CPTPotato 版本："+version+"\")")
         elif get_menu == 2:
             if eval('INPUT({{C,{"暖阳","暗夜","清绿","素白","羊皮","自定义"}}},"设置",{"配色方案"},{"修改字体：退出，按Symb，修改7-12行内容"});') == 0:
                 continue
             if int(eval("C")) == 6:
-                eval('MSGBOX("若出现弹窗请均点击“是”")')
                 eval('BGC:="#0h"')
                 eval('TXC:="#FFFFFFh"')
-                eval('LBC:="#FF0000h"')
                 eval('MSGBOX("请保证输入颜色格式正确！")')
-                if eval('INPUT({{BGC,[2]},{TXC,[2]},{LBC,[2]}},"自定义颜色",{"背景颜色","文本颜色","标记颜色"},{"输入颜色，形式如#FFFFFFh","输入颜色，形式如#FFFFFFh","输入颜色，形式如#FFFFFFh"})') == 0:
+                if eval('INPUT({{BGC,[2]},{TXC,[2]}},"自定义颜色",{"背景颜色","文本颜色"},{"输入颜色，形式如#FFFFFFh","输入颜色，形式如#FFFFFFh"})') == 0:
                     eval('MSGBOX("已取消自定义！")')
+                    continue
                 TEXT_COLOR = eval('TXC')
                 BG_COLOR = eval('BGC')
-                LB_COLOR = eval('LBC')
             else:
                 TEXT_COLOR = COLOR_LIST[0][int(eval("C"))-1]
                 BG_COLOR = COLOR_LIST[1][int(eval("C"))-1]
-                LB_COLOR = COLOR_LIST[2][int(eval("C"))-1]
             eval("\""+TEXT_COLOR+"\""+"▶AFiles(\"TEXT_COLOR\")")  
             eval("\""+BG_COLOR+"\""+"▶AFiles(\"BG_COLOR\")")  
-            eval("\""+LB_COLOR+"\""+"▶AFiles(\"LB_COLOR\")")  
         elif get_menu == 1:
             book_name = choose_book()
             while True:
-                if eval("CHOOSE(N,"+"\""+book_name+"\",\"继续阅读\",\"查看目录\",\"跳转页码\",\"构建索引\",\"返回\")") == 0:
+                if eval("CHOOSE(N,"+"\""+book_name+"\",\"继续阅读\",\"查看目录\",\"跳转页码\",\"查看图片\",\"检索内容\",\"构建索引\",\"返回\")") == 0:
                     continue
                 action = int(eval("N"))
-                if action == 5:
+                if action == 7:
                     break
-                elif action == 4:
+                elif action == 5:
+                    if not check_file(book_name+"_list.txt"):
+                        eval('MSGBOX("请先构建索引！")')
+                        continue
+                    eval('TXS:=""')
+                    list = load_list(book_name)
+                    maxpage = len(list["Pages"])
+                    if eval('INPUT({A,B,{TXS,[2]}},"检索内容",{"起始页","结束页","关键词"},{"检索起始页码（可能耗时较久）","检索结束页码（可能耗时较久）","检索的关键词（可能耗时较久）"},{1,'+str(maxpage)+',""},{1,'+str(maxpage)+',""})') == 0:
+                        continue
+                    #print(book_name,eval('TXS'),int(eval('A'))-1,int(eval('B'))-1)
+                    result = search_book(book_name,eval('TXS'),int(eval('A'))-1,int(eval('B'))-1)
+                    #print(result)
+                    show_search(book_name,result)
+                elif action == 6:
                     if eval("MSGBOX(\"确定构建索引？本操作可能耗时较久！\",1)") == 0:
                         continue
                     build_list(book_name)
@@ -453,3 +612,8 @@ while True:
                         eval('MSGBOX("请先构建索引！")')
                         continue
                     show_contents(book_name)
+                elif action == 4:
+                    if not check_file(book_name+"_list.txt"):
+                        eval('MSGBOX("请先构建索引！")')
+                        continue
+                    show_piclist(book_name)

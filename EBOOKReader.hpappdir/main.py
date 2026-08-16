@@ -1,4 +1,3 @@
-py_eval = eval
 from hpprime import *
 import gc
 import math
@@ -11,7 +10,6 @@ MAX_X = 20 #每行显示的字个数
 MAX_Y = 14 #每一页显示的行数
 #注意修改完后请重建所有书本索引
 #请注意：修改字体大小会导致原有阅读位置和书签等不可用
-
 #配色数据读取和初始化
 COLOR_LIST = [
     ['#3C3C3Ch', '#E6E6E6h', '#2C3E3Eh', '#333333h', '#5D4037h'],
@@ -103,7 +101,7 @@ def build_list(book_name):
     def close_current_page():
         nonlocal page_start, page_end, line_count
         if page_start is not None:
-            pages.append((page_start, page_end))
+            pages.append((page_start[0], page_start[1], page_end[0], page_end[1]))
             page_start = None
             page_end = None
             line_count = 0
@@ -119,7 +117,7 @@ def build_list(book_name):
             line_count = 1
         else:
             if line_count + 1 > maxy:
-                pages.append((page_start, page_end))
+                pages.append((page_start[0], page_start[1], page_end[0], page_end[1]))
                 page_start = start_pos
                 page_end = end_pos
                 line_count = 1
@@ -174,29 +172,35 @@ def build_list(book_name):
             add_display_line(line_idx, col_start, col_end)
     close_current_page()
     if not pages:
-        pages.append(((0, 0), (0, 0)))
+        pages.append((0, 0, 0, 0))
     for idx, page in enumerate(pages):
-        s_l, s_c = page[0]
-        e_l, e_c = page[1]
+        s_l, s_c, e_l, e_c = page
         if e_l >= len(lines):
             e_l = len(lines) - 1
         max_col = max(len(lines[e_l]) - 1, 0)
         if e_c > max_col:
             e_c = max_col
-        pages[idx] = ((s_l, s_c), (e_l, e_c))
+        pages[idx] = (s_l, s_c, e_l, e_c)
     result = {"Contents": contents, "Pages": pages,"Pictures": pictures}
     eval('"'+str(len(pages))+'"'+'▶AFiles("'+book_name+'_TPage")')
+    #print (result['Pictures'])
+    # 删除原来的 with open 写入 repr 的代码，替换为：
+    with open(book_name + "_list.txt", "w", encoding="utf-8") as f:
+        f.write("PAGES\n")
+        for s_l, s_c, e_l, e_c in pages:
+            f.write(str(s_l) + " " + str(s_c) + " " + str(e_l) + " " + str(e_c) + "\n")
+        f.write("CONTENTS\n")
+        for title, pnum in contents:
+            f.write(str(pnum) + "\t" + title + "\n")
+        f.write("PICTURES\n")
+        for pic_name, pnum in pictures:
+            f.write(str(pnum) + "\t" + pic_name + "\n")
     del lines, contents, pages, pictures
     gc.collect()
-    #print (result['Pictures'])
-    with open(book_name + "_list.txt", "w", encoding="utf-8") as f:
-        f.write(repr(result))
-        f.close
     #print(result)  
     return
 def max_page(book_name):
-    data = load_list(book_name)
-    return len(data["Pages"]) if data else 0
+    return int(eval('AFiles("'+book_name+'_TPage")'))
 #行号映射页码
 def find_page_by_coord(pages, line_idx, col_idx):
     lo, hi = 0, len(pages) - 1
@@ -208,13 +212,13 @@ def find_page_by_coord(pages, line_idx, col_idx):
             hi = mid - 1
     if hi < 0:
         return None
-    start_line = pages[hi][0][0]
-    end_line = pages[hi][1][0]
-    end_col = pages[hi][1][1]
+    start_line = pages[hi][0]
+    end_line = pages[hi][2]
+    end_col = pages[hi][3]
     if line_idx < end_line or (line_idx == end_line and col_idx <= end_col):
         return hi
     else:
-        if hi + 1 < len(pages) and pages[hi+1][0][0] == line_idx:
+        if hi + 1 < len(pages) and pages[hi+1][0] == line_idx:
             return hi + 1
         return None
 #文本渲染器
@@ -300,13 +304,41 @@ def load_list(book_name):
     global _index_cache, _cache_book_name
     if _cache_book_name == book_name and _index_cache is not None:
         return _index_cache
+    data = {"Contents": [], "Pages": [], "Pictures": []}
     with open(book_name + "_list.txt", "r", encoding="utf-8") as f:
-        content = f.read()
-        data = py_eval(content)
-        del content
-        _cache_book_name = book_name
-        _index_cache = data
-        return data
+        lines = f.readlines()
+    mode = None
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if line == "PAGES":
+            mode = "pages"
+            continue
+        elif line == "CONTENTS":
+            mode = "contents"
+            continue
+        elif line == "PICTURES":
+            mode = "pictures"
+            continue
+        if mode == "pages":
+            parts = line.split()
+            if len(parts) == 4:
+                s_l, s_c, e_l, e_c = map(int, parts)
+                data["Pages"].append((s_l, s_c, e_l, e_c))
+        elif mode == "contents":
+            parts = line.split('\t')
+            if len(parts) == 2:
+                pnum, title = parts
+                data["Contents"].append((title, int(pnum)))
+        elif mode == "pictures":
+            parts = line.split('\t')
+            if len(parts) == 2:
+                pnum, pic_name = parts
+                data["Pictures"].append((pic_name, int(pnum)))
+    _cache_book_name = book_name
+    _index_cache = data
+    return data
     
 def load_book_text(book_name):
     global _text_cache, _text_cache_book
@@ -327,8 +359,8 @@ def start_read(book_name,page):
         eval('"'+str(page)+'"'+'▶AFiles("'+book_name+'_Post")')
         page_info = list["Pages"][page]
         show_str = ""
-        if page_info[0][0] == page_info[1][0]:
-            show_str = lines[page_info[0][0]][page_info[0][1]:(page_info[1][1]+1)]
+        if page_info[0] == page_info[2]:
+            show_str = lines[page_info[0]][page_info[1]:(page_info[3]+1)]
             a,b = parse_ch_structure(show_str)
             if not a == None:
                 show_str = a+' '+b
@@ -353,13 +385,13 @@ def start_read(book_name,page):
                     pass                    
         else:
             parts = []
-            parts.append(lines[page_info[0][0]][page_info[0][1]:])
+            parts.append(lines[page_info[0]][page_info[1]:])
             a, b = parse_ch_structure(parts[0])
             if a is not None:
                 parts[0] = a + ' ' + b
-            for i in range(page_info[0][0]+1, page_info[1][0]):
+            for i in range(page_info[0]+1, page_info[2]):
                 parts.append(lines[i])
-            parts.append(lines[page_info[1][0]][:(page_info[1][1]+1)])
+            parts.append(lines[page_info[2]][:(page_info[3]+1)])
             show_str = '\n'.join(parts)
         show_text(show_str,book_name+'  '+str(page+1)+'/'+str(max_page))
         while True:
@@ -374,6 +406,8 @@ def start_read(book_name,page):
                     break
             if key_code == 4:
                 return
+            if gc.mem_free() < 500:
+                gc.collect()
 def jump_page(book_name,page):
     eval('"'+str(get_position(book_name))+'"▶AFiles("'+book_name+'_Return")')
     start_read(book_name,page)
@@ -475,8 +509,8 @@ def search_book(book_name, keyword, start_page=0, end_page=None):
     end_page = min(total_pages - 1, end_page)
     if start_page > end_page:
         return []
-    start_line = pages[start_page][0][0]  
-    end_line = pages[end_page][1][0] 
+    start_line = pages[start_page][0] 
+    end_line = pages[end_page][2]
     results = []
     MAX_RESULTS = 200
     for line_idx in range(start_line, end_line + 1):
@@ -489,12 +523,12 @@ def search_book(book_name, keyword, start_page=0, end_page=None):
                 break
             page_idx = find_page_by_coord(pages, line_idx, col_idx)
             if page_idx is not None and start_page <= page_idx <= end_page:
-                ctx_start = max(0, col_idx - 4)
-                ctx_end = min(len(line), col_idx + kw_len + 4)
+                ctx_start = max(0, col_idx - 5)
+                ctx_end = min(len(line), col_idx + kw_len + 5)
                 raw_context = line[ctx_start:ctx_end]
                 kw_start_in_ctx = col_idx - ctx_start
                 kw_end_in_ctx = kw_start_in_ctx + kw_len
-                context = (raw_context[:kw_start_in_ctx] + '*' + raw_context[kw_end_in_ctx:])
+                context = (raw_context[:kw_start_in_ctx] + '~' + raw_context[kw_end_in_ctx:])
                 results.append([page_idx + 1,[line_idx, col_idx, col_idx + kw_len],context])
                 if len(results) >= MAX_RESULTS:
                     eval('MSGBOX("结果超过200条，仅显示前200条")')
@@ -545,6 +579,11 @@ while True:
             eval("\""+TEXT_COLOR+"\""+"▶AFiles(\"TEXT_COLOR\")")  
             eval("\""+BG_COLOR+"\""+"▶AFiles(\"BG_COLOR\")")  
         elif get_menu == 1:
+            _text_cache = None
+            _index_cache = None
+            _cache_book_name = ""
+            _text_cache_book = ""
+            gc.collect()
             book_name = choose_book()
             while True:
                 if eval("CHOOSE(N,"+"\""+book_name+"\",\"继续阅读\",\"查看目录\",\"跳转页码\",\"查看图片\",\"检索内容\",\"构建索引\",\"返回\")") == 0:

@@ -206,7 +206,7 @@ def find_page_by_coord(pages, line_idx, col_idx):
     lo, hi = 0, len(pages) - 1
     while lo <= hi:
         mid = (lo + hi) // 2
-        if pages[mid][0][0] <= line_idx:
+        if pages[mid][0] <= line_idx:
             lo = mid + 1
         else:
             hi = mid - 1
@@ -221,6 +221,15 @@ def find_page_by_coord(pages, line_idx, col_idx):
         if hi + 1 < len(pages) and pages[hi+1][0] == line_idx:
             return hi + 1
         return None
+#时间渲染器
+def draw_time():
+    timen = eval("Time")
+    h = int(timen)
+    m = int((timen - h)*60)
+    tstr = "%02d:%02d" % (h, m)
+    eval('RECT_P(G0,278,226,320,240,'+BG_COLOR+')')
+    eval('TEXTOUT_P("' + tstr + '",280,225,3,' + TEXT_COLOR + ',240)')
+    return
 #文本渲染器
 def show_text(main_text,floor_text):
     eval("RECT_P(G0,0,0,320,240," + BG_COLOR + ")")
@@ -262,6 +271,7 @@ def show_pic(floortext,pic_name):
     while True:
         draw_imagine(pic_name,size,[x,y])
         eval('TEXTOUT_P("' + floortext + '",0,225,3,' + TEXT_COLOR + ',240,'+BG_COLOR+')')
+        draw_time()
         event = eval("WAIT(-1)")
         if isinstance(event, int) or isinstance(event, float):
             if event == -1:
@@ -395,6 +405,7 @@ def start_read(book_name,page):
             show_str = '\n'.join(parts)
         show_text(show_str,book_name+'  '+str(page+1)+'/'+str(max_page))
         while True:
+            draw_time()
             key_code = eval("WAIT(0)")
             if key_code == 30 or key_code == 12 or key_code == 8:
                 if not page == max_page - 1:
@@ -419,7 +430,6 @@ def show_list(title,list,position):
     total_pages = (len(list)+per_page-1) // per_page
     while True:
         items = ['"上一页"','"下一页"','"跳转"']
-        show_str = 'CHOOSE(N,"' + title +'(' + str(page+1) + '/' + str(total_pages) + ')","上一页","下一页","跳转"'
         for i in range(page * per_page,min((page+1)* per_page,len(list))):
             items.append('"' + list[i] + '"')
         items.append('"返回"')

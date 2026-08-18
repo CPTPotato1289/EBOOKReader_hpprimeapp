@@ -27,10 +27,7 @@ if temps != "错误:输入无效":
 def max_chars():
     return MAX_X,MAX_Y
 def safe_int(inp):
-    try:
         return int(float(inp) + 0.3)
-    except:
-        return 0
 _index_cache = None
 _cache_book_name = ""
 _text_cache = None
@@ -174,7 +171,6 @@ def build_list(book_name):
     result = {"Contents": contents, "Pages": pages,"Pictures": pictures}
     eval('"'+str(len(pages))+'"'+'▶AFiles("'+book_name+'_TPage")')
     #print (result['Pictures'])
-    # 删除原来的 with open 写入 repr 的代码，替换为：
     with open(book_name + "_list.txt", "w", encoding="utf-8") as f:
         f.write("PAGES\n")
         for s_l, s_c, e_l, e_c in pages:

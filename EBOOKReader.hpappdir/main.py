@@ -3,15 +3,12 @@ import gc
 import math
 import sys
 
-version="EBOOKReader v0.11.0alpha"
+version="EBOOKReader v0.11.2alpha"
 
 #字体大小设置区域如下，按照注释修改
 TEXT_SIZE = 4 #显示的字体大小
 MAX_X = 20 #每行显示的字个数
 MAX_Y = 14 #每一页显示的行数
-#注意修改完后请重建所有书本索引
-#请注意：修改字体大小会导致原有阅读位置和书签等不可用
-#配色数据读取和初始化
 COLOR_LIST = [
     ['#3C3C3Ch', '#E6E6E6h', '#2C3E3Eh', '#333333h', '#5D4037h'],
     ['#FBF7F0h', '#1A1A1Ah', '#C7EDCCh', '#F4F6F8h', '#F5E6C8h']
@@ -33,19 +30,33 @@ _index_cache = None
 _cache_book_name = ""
 _text_cache = None
 _text_cache_book = ""
-#获取书本列表
+
 def check_file(file_name):
     files = eval('AFiles()')
     return file_name in files
 
-def get_position(book_name):
-    position = 0
-    temps = eval('AFiles("'+book_name+'_Post")')
+def unpack_pos(pos_str):
     try:
-        position = safe_int(temps)
+        parts = pos_str.split(',')
+        if len(parts) == 2:
+            return int(parts[0]), int(parts[1])
     except:
-        position = 0
-    return position
+        pass
+    return None, None
+
+def get_position(book_name):
+    pos_str = eval('AFiles("'+book_name+'_Post")')
+    line, col = unpack_pos(pos_str)
+    if line is not None and col is not None:
+        data = load_list(book_name)
+        if data is not None:
+            page_idx = find_page_by_coord(data["Pages"], line, col)
+            if page_idx is not None:
+                return page_idx
+    try:
+        return int(pos_str)
+    except:
+        return 0
 
 def max_page(book_name):
     try:
@@ -351,8 +362,8 @@ def start_read(book_name,page):
     list = load_list(book_name)
     max_page = len(list["Pages"])
     while True:
-        eval('"'+str(page)+'"'+'▶AFiles("'+book_name+'_Post")')
         page_info = list["Pages"][page]
+        eval('"' + str(page_info[0]) + "," + str(page_info[1]) + '"▶AFiles("' + book_name + '_Post")')
         show_str = ""
         if page_info[0] == page_info[2]:
             show_str = lines[page_info[0]][page_info[1]:(page_info[3]+1)]
@@ -400,12 +411,15 @@ def start_read(book_name,page):
                     page -= 1 
                     break
             if key_code == 4:
-                return
-            if gc.mem_free() < 500:
                 gc.collect()
+                return
+                
 def jump_page(book_name,page):
-    eval('"'+str(get_position(book_name))+'"▶AFiles("'+book_name+'_Return")')
+    current_page = get_position(book_name)
+    data = load_list(book_name)
+    s_l, s_c = data["Pages"][current_page][0], data["Pages"][current_page][1]
     start_read(book_name,page)
+    eval('"' + str(s_l) + "," + str(s_c) + '"▶AFiles("' + book_name + '_Return")')
     return
 
 def show_list(title,list,position):
@@ -585,7 +599,7 @@ while True:
         elif get_menu == 3:
             eval("MSGBOX(\"EBOOKREADER 一款强大的阅读器 运行过程中出现创建变量提示请点击是 made by CPTPotato 版本："+version+"\")")
         elif get_menu == 2:
-            if eval('INPUT({{C,{"暖阳","暗夜","清绿","素白","羊皮","自定义"}}},"设置",{"配色方案"},{"修改字体：退出，按Symb，修改7-12行内容"});') == 0:
+            if eval('INPUT({{C,{"暖阳","暗夜","清绿","素白","羊皮","自定义"}},{S,{"4","5","6"}}},"设置",{"配色方案","字体大小"},{"自定义颜色","修改字体后请重建所有索引"});') == 0:
                 continue
             if safe_int(eval("C")) == 6:
                 eval('BGC:="#0h"')
@@ -599,6 +613,7 @@ while True:
             else:
                 TEXT_COLOR = COLOR_LIST[0][safe_int(eval("C"))-1]
                 BG_COLOR = COLOR_LIST[1][safe_int(eval("C"))-1]
+                TX_SIZE = safe_int(eval('S'))+3
             eval("\""+TEXT_COLOR+"\""+"▶AFiles(\"TEXT_COLOR\")")  
             eval("\""+BG_COLOR+"\""+"▶AFiles(\"BG_COLOR\")")  
         elif get_menu == 1:
@@ -632,10 +647,14 @@ while True:
                             eval('MSGBOX("请先构建索引！")')
                             continue
                         maxpage = max_page(book_name)
+                        ret_str = eval('AFiles("'+book_name+'_Return")')
+                        line, col = unpack_pos(ret_str)
+                        data = load_list(book_name)
+                        pos_page = find_page_by_coord(data["Pages"], line, col)
                         position = 0
-                        try:
-                            position = safe_int(eval('AFiles("'+book_name+'_Return")'))
-                        except:
+                        if pos_page is not None:
+                           position = pos_page
+                        else:
                             position = 0
                         if eval('INPUT(N,"跳转页码","跳转到","范围：1-'+str(maxpage)+' (默认值：上次跳转前位置)",'+str(position+1)+','+str(position+1)+')') == 0:
                             continue

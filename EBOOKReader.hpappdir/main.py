@@ -1,6 +1,7 @@
 from hpprime import *
 import gc
 import math
+import sys
 
 version="EBOOKReader v0.11.0alpha"
 
@@ -372,8 +373,10 @@ def start_read(book_name,page):
                         if not page == max_page -1:
                             page += 1
                         continue
+                except KeyboardInterrupt:
+                    raise
                 except:
-                    pass                    
+                    pass                
         else:
             parts = []
             parts.append(lines[page_info[0]][page_info[1]:])
@@ -573,6 +576,7 @@ def show_search(book_name, result):
         jump_page(book_name, result[action][0] - 1)
 
 while True:
+    try:
         if eval("CHOOSE(N,\"菜单\",\"书架\",\"设置\",\"关于\",\"退出\")") == 0:
             continue
         get_menu = safe_int(eval("N"))
@@ -661,3 +665,9 @@ while True:
                             eval('MSGBOX("请先构建索引！")')
                             continue
                         show_piclist(book_name)
+    except KeyboardInterrupt:
+        print('按下on键已退出')
+        sys.exit(0)
+    except Exception as e:
+        print("发生错误：",repr(e),"程序退出")
+        raise

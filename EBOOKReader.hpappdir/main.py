@@ -3,29 +3,38 @@ import gc
 import math
 import sys
 
-version="EBOOKReader v0.11.2alpha"
+def max_chars():
+    return MAX_X,MAX_Y
+def safe_int(inp):
+        return int(float(inp) + 0.3)
 
-#字体大小设置区域如下，按照注释修改
-TEXT_SIZE = 4 #显示的字体大小
-MAX_X = 20 #每行显示的字个数
-MAX_Y = 14 #每一页显示的行数
+version="EBOOKReader v0.11.2alpha"
+font_table = ((4,20,14),(5,17,11),(6,16,9))
+TEXT_SIZE = 4 
+MAX_X = 20 
+MAX_Y = 14
 COLOR_LIST = [
     ['#3C3C3Ch', '#E6E6E6h', '#2C3E3Eh', '#333333h', '#5D4037h'],
     ['#FBF7F0h', '#1A1A1Ah', '#C7EDCCh', '#F4F6F8h', '#F5E6C8h']
 ]
 BG_COLOR = "#FBF7F0h"
 TEXT_COLOR = "#3C3C3Ch"
-temps = eval("AFiles(\"BG_COLOR\")")
-if temps != "错误:输入无效":
-    BG_COLOR = temps
-temps = eval("AFiles(\"TEXT_COLOR\")")
-if temps != "错误:输入无效":
-    TEXT_COLOR = temps
-#print ("debug:setting-",BG_COLOR,TEXT_COLOR)
-def max_chars():
-    return MAX_X,MAX_Y
-def safe_int(inp):
-        return int(float(inp) + 0.3)
+def load_set():
+    global BG_COLOR,TEXT_COLOR,TEXT_SIZE,MAX_X,MAX_Y
+    temps = eval("AFiles(\"BG_COLOR\")")
+    if temps != "错误:输入无效":
+        BG_COLOR = temps
+    temps = eval("AFiles(\"TEXT_COLOR\")")
+    if temps != "错误:输入无效":
+        TEXT_COLOR = temps
+    temps = eval("AFiles(\"FONT_SIZE\")")
+    if temps != "错误:输入无效":
+        temps = safe_int(temps)
+        TEXT_SIZE = font_table[temps][0]
+        MAX_X = font_table[temps][1]
+        MAX_Y = font_table[temps][2]
+load_set()
+
 _index_cache = None
 _cache_book_name = ""
 _text_cache = None
@@ -63,6 +72,12 @@ def max_page(book_name):
         return safe_int(eval('AFiles("'+book_name+'_TPage")'))
     except:
         return None
+def max_line(book_name):
+    try:
+        return safe_int(eval('AFiles("'+book_name+'_TLINE")'))
+    except:
+        return None
+    
 def parse_ch_structure(paragraph):
     if not paragraph.startswith('[ch'):
         return None, None
@@ -180,8 +195,8 @@ def build_list(book_name):
         if e_c > max_col:
             e_c = max_col
         pages[idx] = (s_l, s_c, e_l, e_c)
-    result = {"Contents": contents, "Pages": pages,"Pictures": pictures}
     eval('"'+str(len(pages))+'"'+'▶AFiles("'+book_name+'_TPage")')
+    eval('"'+str(len(lines))+'"'+'▶AFiles("'+book_name+'_TLINE")')
     #print (result['Pictures'])
     with open(book_name + "_list.txt", "w", encoding="utf-8") as f:
         f.write("PAGES\n")
@@ -217,6 +232,91 @@ def find_page_by_coord(pages, line_idx, col_idx):
         if hi + 1 < len(pages) and pages[hi+1][0] == line_idx:
             return hi + 1
         return None
+#读写书签文件
+def load_bookmarks(book_name):
+    bookmarks = []
+    try:
+        with open(book_name + "_bookmarks.txt", 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.rstrip('\n')
+                if not line:
+                    continue
+                parts = line.split('\t')
+                if len(parts) >= 3:
+                    s_l = safe_int(parts[0])
+                    s_c = safe_int(parts[1])
+                    comment = '\t'.join(parts[2:])
+                    bookmarks.append((s_l, s_c, comment))
+    except:
+        pass
+    return bookmarks
+def save_bookmarks(book_name, bookmarks):
+    with open(book_name + "_bookmarks.txt", 'w', encoding='utf-8') as f:
+        for s_l, s_c, comment in bookmarks:
+            f.write(str(s_l) + "\t" + str(s_c) + "\t" + comment + "\n")
+#添加书签
+def add_bookmark(book_name,current_page):
+    data = load_list(book_name)
+    eval('TXS:="书签"')
+    if eval('INPUT({{P,[0]},{TXS,[2]}},"添加书签",{"页码","注释"},{"当前页码","输入注释内容"},{' + str(current_page+1) + '},{'+str(current_page+1)+'})') == 0:
+        return
+    p_input = safe_int(eval('P'))
+    if p_input < 1 or p_input > len(data["Pages"]):
+        eval('MSGBOX("错误的输入！")')
+        return
+    s_l, s_c, _, _ = data["Pages"][p_input - 1]
+    comment = eval('TXS').strip()
+    if comment == "":
+        eval('MSGBOX("注释不能为空！")')
+        return
+    bookmarks = load_bookmarks(book_name)
+    bookmarks.append((s_l, s_c, comment))
+    bookmarks.sort(key=lambda x: (x[0], x[1]))
+    save_bookmarks(book_name, bookmarks)
+    eval('MSGBOX("书签已添加！")')
+    return
+#书签管理
+def manage_bookmarks(book_name):
+    bookmarks = load_bookmarks(book_name)
+    if not bookmarks:
+        eval('MSGBOX("暂无书签！")')
+        return
+    data = load_list(book_name)
+    pages = data["Pages"]
+    while True:
+        display_items = []
+        bookmarks = load_bookmarks(book_name)
+        if bookmarks == []:
+            return
+        for s_l, s_c, comment in bookmarks:
+            page_idx = find_page_by_coord(pages, s_l, s_c)
+            page_num = str(page_idx + 1) if page_idx is not None else "?"
+            short = comment[:10] + ("..." if len(comment) > 10 else "")
+            display_items.append("P%s %s" % (page_num, short))
+        selected = show_list("书签列表", display_items, 0)
+        if selected == -1:
+            return
+        s_l, s_c, comment = bookmarks[selected]
+        page_idx = find_page_by_coord(pages, s_l, s_c)
+        opts = '"查看原文","查看注释","删除书签","返回"'
+        while True:
+            if eval('CHOOSE(N,"书签('+ str(page_idx) + ')",' + opts + ')') == 0:
+                continue
+            choice = safe_int(eval('N'))
+            if choice == 1:  
+                jump_page(book_name, page_idx)
+            elif choice == 2: 
+                safe_comment = comment.replace('"', '\\"')
+                eval('MSGBOX("' + safe_comment + '")')
+            elif choice == 3: 
+                if eval('MSGBOX("确定删除该书签？",1)') == 0:
+                    continue
+                del bookmarks[selected]
+                save_bookmarks(book_name, bookmarks)
+                eval('MSGBOX("已删除书签！")')
+                break
+            elif choice == 4:
+                break
 #时间渲染器
 def draw_time():
     timen = eval("Time")
@@ -261,7 +361,7 @@ def draw_imagine(pic_name,size,position):
     if yb < 240:
         eval('RECT_P(G0,0,'+str(yb)+',320,240,'+BG_COLOR+')')
 
-def show_pic(floortext,pic_name):
+def show_pic(floortext,pic_name,page,book_name):
     eval('G1:= AFiles("' +pic_name+'")')
     x = 0;y = 0;size=1
     while True:
@@ -271,6 +371,9 @@ def show_pic(floortext,pic_name):
         event = eval("WAIT(-1)")
         if isinstance(event, int) or isinstance(event, float):
             if event == -1:
+                continue
+            elif event == 3:
+                add_bookmark(book_name,page)
                 continue
             elif event == 4:
                 return 0
@@ -373,7 +476,7 @@ def start_read(book_name,page):
             elif show_str.startswith("[pic:"):
                 try:
                     pic_name = show_str[5:show_str.find(']')]
-                    picevent = show_pic(book_name+'  '+str(page+1)+'/'+str(max_page),pic_name)
+                    picevent = show_pic(book_name+'  '+str(page+1)+'/'+str(max_page),pic_name,page,book_name)
                     if picevent == 0:
                         return
                     elif picevent == -1:
@@ -413,6 +516,9 @@ def start_read(book_name,page):
             if key_code == 4:
                 gc.collect()
                 return
+            if key_code == 3:
+                add_bookmark(book_name,page)
+                break
                 
 def jump_page(book_name,page):
     current_page = get_position(book_name)
@@ -468,7 +574,9 @@ def get_book_list():
     for i in files:
         if i.lower().endswith('_book.txt'):
             prefix = i.split("_")[0]
-            txt_files.append((prefix,get_position(prefix),max_page(prefix)))
+            pos_str = eval('AFiles("'+prefix+'_Post")')
+            line, col = unpack_pos(pos_str)
+            txt_files.append((prefix,line,max_line(prefix)))
     return txt_files
 
 def choose_book():
@@ -481,7 +589,7 @@ def choose_book():
     book_list = get_book_list()
     book_show = []
     for i in range(len(book_list)):
-        if book_list[i][2] != None:
+        if book_list[i][2] != None and book_list[i][1] != None:
             book_show.append("%04.1f%% " % (100*book_list[i][1]/book_list[i][2]) + book_list[i][0])
         else:
             book_show.append('00.0% ' + book_list[i][0])
@@ -599,33 +707,34 @@ while True:
         elif get_menu == 3:
             eval("MSGBOX(\"EBOOKREADER 一款强大的阅读器 运行过程中出现创建变量提示请点击是 made by CPTPotato 版本："+version+"\")")
         elif get_menu == 2:
-            if eval('INPUT({{C,{"暖阳","暗夜","清绿","素白","羊皮","自定义"}},{S,{"4","5","6"}}},"设置",{"配色方案","字体大小"},{"自定义颜色","修改字体后请重建所有索引"});') == 0:
+            if eval('INPUT({{C,{"暖阳","暗夜","清绿","素白","羊皮","自定义"}},{S,{"小","中","大"}}},"设置",{"配色方案","字体大小"},{"自定义颜色","修改字体后请重建所有索引"});') == 0:
                 continue
             if safe_int(eval("C")) == 6:
                 eval('BGC:="#0h"')
                 eval('TXC:="#FFFFFFh"')
                 eval('MSGBOX("请保证输入颜色格式正确！")')
                 if eval('INPUT({{BGC,[2]},{TXC,[2]}},"自定义颜色",{"背景颜色","文本颜色"},{"输入颜色，形式如#FFFFFFh","输入颜色，形式如#FFFFFFh"})') == 0:
-                    eval('MSGBOX("已取消自定义！")')
+                    eval('MSGBOX("已取消自定义！设置未保存")')
                     continue
                 TEXT_COLOR = eval('TXC')
                 BG_COLOR = eval('BGC')
             else:
                 TEXT_COLOR = COLOR_LIST[0][safe_int(eval("C"))-1]
                 BG_COLOR = COLOR_LIST[1][safe_int(eval("C"))-1]
-                TX_SIZE = safe_int(eval('S'))+3
+            eval("\""+str(safe_int(eval('S'))-1)+"\""+"▶AFiles(\"FONT_SIZE\")")  
             eval("\""+TEXT_COLOR+"\""+"▶AFiles(\"TEXT_COLOR\")")  
             eval("\""+BG_COLOR+"\""+"▶AFiles(\"BG_COLOR\")")  
+            load_set()
         elif get_menu == 1:
             while True:
                 book_name = choose_book()
                 if book_name == None:
                     break
                 while True:
-                    if eval("CHOOSE(N,"+"\""+book_name+"\",\"继续阅读\",\"查看目录\",\"跳转页码\",\"查看图片\",\"检索内容\",\"构建索引\",\"返回\")") == 0:
+                    if eval("CHOOSE(N,"+"\""+book_name+"\",\"继续阅读\",\"查看目录\",\"跳转页码\",\"查看图片\",\"检索内容\",\"书签管理\",\"构建索引\",\"返回\")") == 0:
                         continue
                     action = safe_int(eval("N"))
-                    if action == 7:
+                    if action == 8:
                         break
                     elif action == 5:
                         if not check_file(book_name+"_list.txt"):
@@ -637,7 +746,7 @@ while True:
                             continue
                         result = search_book(book_name,eval('TXS'),safe_int(eval('A'))-1,safe_int(eval('B'))-1)
                         show_search(book_name,result)
-                    elif action == 6:
+                    elif action == 7:
                         if eval("MSGBOX(\"确定构建索引？本操作可能耗时较久！\",1)") == 0:
                             continue
                         build_list(book_name)
@@ -649,11 +758,9 @@ while True:
                         maxpage = max_page(book_name)
                         ret_str = eval('AFiles("'+book_name+'_Return")')
                         line, col = unpack_pos(ret_str)
-                        data = load_list(book_name)
-                        pos_page = find_page_by_coord(data["Pages"], line, col)
-                        position = 0
-                        if pos_page is not None:
-                           position = pos_page
+                        if line is not None:
+                            data = load_list(book_name)
+                            position = find_page_by_coord(data["Pages"], line, col)
                         else:
                             position = 0
                         if eval('INPUT(N,"跳转页码","跳转到","范围：1-'+str(maxpage)+' (默认值：上次跳转前位置)",'+str(position+1)+','+str(position+1)+')') == 0:
@@ -684,6 +791,11 @@ while True:
                             eval('MSGBOX("请先构建索引！")')
                             continue
                         show_piclist(book_name)
+                    elif action == 6:
+                        if not check_file(book_name+"_list.txt"):
+                            eval('MSGBOX("请先构建索引！")')
+                            continue
+                        manage_bookmarks(book_name)
     except KeyboardInterrupt:
         print('按下on键已退出')
         sys.exit(0)

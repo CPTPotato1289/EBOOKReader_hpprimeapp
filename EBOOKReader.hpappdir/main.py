@@ -8,7 +8,7 @@ def max_chars():
 def safe_int(inp):
         return int(float(inp) + 0.3)
 
-version="EBOOKReader v0.11.2alpha"
+version="EBOOKReader v0.12.1alpha"
 font_table = ((4,20,14),(5,17,11),(6,16,9))
 TEXT_SIZE = 4 
 MAX_X = 20 
@@ -300,7 +300,7 @@ def manage_bookmarks(book_name):
         page_idx = find_page_by_coord(pages, s_l, s_c)
         opts = '"查看原文","查看注释","删除书签","返回"'
         while True:
-            if eval('CHOOSE(N,"书签('+ str(page_idx) + ')",' + opts + ')') == 0:
+            if eval('CHOOSE(N,"书签('+ str(page_idx+1) + ')",' + opts + ')') == 0:
                 continue
             choice = safe_int(eval('N'))
             if choice == 1:  

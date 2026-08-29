@@ -8,7 +8,7 @@ def max_chars():
 def safe_int(inp):
         return int(float(inp) + 0.3)
 
-version="EBOOKReader v0.12.1alpha"
+version="EBOOKReader v1.0.0"
 font_table = ((4,20,14),(5,17,11),(6,16,9))
 TEXT_SIZE = 4 
 MAX_X = 20 
@@ -39,6 +39,7 @@ _index_cache = None
 _cache_book_name = ""
 _text_cache = None
 _text_cache_book = ""
+_text_cache_vol = -1
 
 def check_file(file_name):
     files = eval('AFiles()')
@@ -47,36 +48,38 @@ def check_file(file_name):
 def unpack_pos(pos_str):
     try:
         parts = pos_str.split(',')
-        if len(parts) == 2:
-            return int(parts[0]), int(parts[1])
+        return int(parts[0]), int(parts[1]), int(parts[2])
     except:
         pass
-    return None, None
+    return None, None,None
 
 def get_position(book_name):
     pos_str = eval('AFiles("'+book_name+'_Post")')
-    line, col = unpack_pos(pos_str)
-    if line is not None and col is not None:
+    parts = pos_str.split(',')
+    if len(parts) == 3:
+        vol, line, col = parts
         data = load_list(book_name)
-        if data is not None:
-            page_idx = find_page_by_coord(data["Pages"], line, col)
-            if page_idx is not None:
-                return page_idx
+        page_idx = find_page_by_coord(data["Pages"], int(vol), int(line), int(col))
+        if page_idx is not None:
+            return page_idx
     try:
-        return int(pos_str)
+        return int(pos_str) 
     except:
         return 0
 
+def max_line(book_name, vol=0):
+    try:
+        return safe_int(eval('AFiles("'+book_name+'_'+str(vol)+'_TLINE")'))
+    except:
+        return None
 def max_page(book_name):
     try:
         return safe_int(eval('AFiles("'+book_name+'_TPage")'))
     except:
-        return None
-def max_line(book_name):
-    try:
-        return safe_int(eval('AFiles("'+book_name+'_TLINE")'))
-    except:
-        return None
+        try:
+            return safe_int(eval('AFiles("'+book_name+'_0_TPage")'))
+        except:
+            return None
     
 def parse_ch_structure(paragraph):
     if not paragraph.startswith('[ch'):
@@ -101,43 +104,28 @@ def build_list(book_name):
     _text_cache = None
     _text_cache_book = ""
 
-    with open(book_name + "_book.txt", 'r', encoding='utf-8') as f:
-        lines = [line.rstrip('\n') for line in f]
-        f.close
-    maxx, maxy = max_chars()
-    contents = []    
-    pictures = []      
-    pages = []             
-    page_start = None   
-    page_end = None      
-    line_count = 0   
-
-    def close_current_page():
-        nonlocal page_start, page_end, line_count
-        if page_start is not None:
-            pages.append((page_start[0], page_start[1], page_end[0], page_end[1]))
-            page_start = None
-            page_end = None
-            line_count = 0
-
-    def add_display_line(line_idx, col_start, col_end):
-        nonlocal page_start, page_end, line_count
-        start_pos = (line_idx, col_start)
-        end_pos = (line_idx, col_end)
-
-        if page_start is None:
-            page_start = start_pos
-            page_end = end_pos
-            line_count = 1
-        else:
-            if line_count + 1 > maxy:
-                pages.append((page_start[0], page_start[1], page_end[0], page_end[1]))
-                page_start = start_pos
-                page_end = end_pos
-                line_count = 1
+    files = eval('AFiles()')
+    vol_files = []  
+    for f in files:
+        if f.lower().startswith(book_name) and f.lower().endswith('_book.txt'):
+            base = f[:-9]
+            if base == book_name:
+                vol_files.append((0, f))
             else:
-                page_end = end_pos
-                line_count += 1
+                if '(' in base and base.endswith(')'):
+                    lpos = base.rfind('(')
+                    rpos = base.rfind(')')
+                    if lpos != -1 and rpos != -1 and lpos < rpos:
+                        num_str = base[lpos+1:rpos]
+                        if num_str.isdigit():
+                            vol = int(num_str)
+                            vol_files.append((vol, f))
+
+    maxx, maxy = max_chars()
+    all_pages = []     
+    all_contents = []  
+    all_pictures = []   
+    global_page = 0  
 
     def split_paragraph_by_chars(text):
         if not text:
@@ -150,87 +138,144 @@ def build_list(book_name):
             start = end
         return segments
 
-    for line_idx, paragraph in enumerate(lines):
-        ch, title = parse_ch_structure(paragraph)
-        if ch is not None:
-            close_current_page()
-            page_number = len(pages) + 1
-            contents.append((title, page_number))
-            if paragraph == "":
-                add_display_line(line_idx, 0, 0)
+    for vol, fname in vol_files:
+        with open(fname, 'r', encoding='utf-8') as f:
+            lines = [line.rstrip('\n') for line in f]
+
+        contents = []     
+        pictures = []    
+        pages = []      
+        page_start = None
+        page_end = None
+        line_count = 0
+
+        def close_current_page():
+            nonlocal page_start, page_end, line_count
+            if page_start is not None:
+                pages.append((page_start[0], page_start[1], page_end[0], page_end[1]))
+                page_start = None
+                page_end = None
+                line_count = 0
+
+        def add_display_line(line_idx, col_start, col_end):
+            nonlocal page_start, page_end, line_count
+            start_pos = (line_idx, col_start)
+            end_pos = (line_idx, col_end)
+
+            if page_start is None:
+                page_start = start_pos
+                page_end = end_pos
+                line_count = 1
             else:
+                if line_count + 1 > maxy:
+                    pages.append((page_start[0], page_start[1], page_end[0], page_end[1]))
+                    page_start = start_pos
+                    page_end = end_pos
+                    line_count = 1
+                else:
+                    page_end = end_pos
+                    line_count += 1
+
+        for line_idx, paragraph in enumerate(lines):
+            ch, title = parse_ch_structure(paragraph)
+            if ch is not None:
+                close_current_page()
+                local_page_num = len(pages) + 1
+                contents.append((title, local_page_num))
+                if paragraph == "":
+                    add_display_line(line_idx, 0, 0)
+                else:
+                    for col_start, col_end in split_paragraph_by_chars(paragraph):
+                        add_display_line(line_idx, col_start, col_end)
+                continue
+
+            if paragraph.startswith("[pic:"):
+                close_current_page()
+                pic_name = paragraph[5:paragraph.find(']')]
+                start_page_before = len(pages)
                 for col_start, col_end in split_paragraph_by_chars(paragraph):
                     add_display_line(line_idx, col_start, col_end)
-            continue
+                close_current_page()
+                if len(pages) > start_page_before:
+                    local_page_num = start_page_before + 1
+                    pictures.append((pic_name, local_page_num))
+                continue
 
-        if paragraph.startswith("[pic:"):
-            close_current_page()
-            pic_name = paragraph[5:paragraph.find(']')]
-            start_page_before = len(pages)
+            if paragraph == "":
+                if page_start is None:
+                    continue
+                if line_count < maxy:
+                    add_display_line(line_idx, 0, 0)
+                continue
+
             for col_start, col_end in split_paragraph_by_chars(paragraph):
                 add_display_line(line_idx, col_start, col_end)
-            close_current_page()
-            if len(pages) > start_page_before:
-                page_num = start_page_before + 1
-                pictures.append((pic_name,page_num))
-            continue
 
-        if paragraph == "":
-            if page_start is None:
-                continue
-            if line_count < maxy:
-                add_display_line(line_idx, 0, 0)
-            continue
+        close_current_page()
 
-        for col_start, col_end in split_paragraph_by_chars(paragraph):
-            add_display_line(line_idx, col_start, col_end)
-    close_current_page()
-    if not pages:
-        pages.append((0, 0, 0, 0))
-    for idx, page in enumerate(pages):
-        s_l, s_c, e_l, e_c = page
-        if e_l >= len(lines):
-            e_l = len(lines) - 1
-        max_col = max(len(lines[e_l]) - 1, 0)
-        if e_c > max_col:
-            e_c = max_col
-        pages[idx] = (s_l, s_c, e_l, e_c)
-    eval('"'+str(len(pages))+'"'+'▶AFiles("'+book_name+'_TPage")')
-    eval('"'+str(len(lines))+'"'+'▶AFiles("'+book_name+'_TLINE")')
-    #print (result['Pictures'])
+        vol_page_offset = global_page
+        for s_l, s_c, e_l, e_c in pages:
+            all_pages.append((vol, s_l, s_c, e_l, e_c))
+        for title, local_page in contents:
+            all_contents.append((title, local_page + vol_page_offset))
+        for pic_name, local_page in pictures:
+            all_pictures.append((pic_name, local_page + vol_page_offset))
+        global_page += len(pages)
+        eval('"' + str(len(lines)) + '"▶AFiles("' + book_name + '_' + str(vol) + '_TLINE")')
+        eval('"' + str(len(pages)) + '"▶AFiles("' + book_name + '_' + str(vol) + '_TPage")')
+        del lines, contents, pictures, pages
+        gc.collect()
+
+    if not all_pages:
+        all_pages.append((0, 0, 0, 0, 0))
+        global_page = 1
+
+    total_lines_all = 0
+    for vol, _ in vol_files:
+        try:
+            total_lines_all += safe_int(eval('AFiles("' + book_name + '_' + str(vol) + '_TLINE")'))
+        except:
+            pass
+    eval('"' + str(global_page) + '"▶AFiles("' + book_name + '_TPage")')
+    eval('"' + str(total_lines_all) + '"▶AFiles("' + book_name + '_TLINE")')
+
     with open(book_name + "_list.txt", "w", encoding="utf-8") as f:
         f.write("PAGES\n")
-        for s_l, s_c, e_l, e_c in pages:
-            f.write(str(s_l) + " " + str(s_c) + " " + str(e_l) + " " + str(e_c) + "\n")
+        for vol, s_l, s_c, e_l, e_c in all_pages:
+            f.write(str(vol) + " " + str(s_l) + " " + str(s_c) + " " + str(e_l) + " " + str(e_c) + "\n")
         f.write("CONTENTS\n")
-        for title, pnum in contents:
+        for title, pnum in all_contents:
             f.write(str(pnum) + "\t" + title + "\n")
         f.write("PICTURES\n")
-        for pic_name, pnum in pictures:
+        for pic_name, pnum in all_pictures:
             f.write(str(pnum) + "\t" + pic_name + "\n")
-    del lines, contents, pages, pictures
+    del all_pages, all_contents, all_pictures
     gc.collect()
-    #print(result)  
     return
 #行号映射页码
-def find_page_by_coord(pages, line_idx, col_idx):
+def find_page_by_coord(pages, vol, line_idx, col_idx):
     lo, hi = 0, len(pages) - 1
     while lo <= hi:
         mid = (lo + hi) // 2
-        if pages[mid][0] <= line_idx:
+        if pages[mid][0] < vol:
             lo = mid + 1
-        else:
+        elif pages[mid][0] > vol:
             hi = mid - 1
+        else:
+            if pages[mid][1] <= line_idx:
+                lo = mid + 1
+            else:
+                hi = mid - 1
     if hi < 0:
         return None
-    start_line = pages[hi][0]
-    end_line = pages[hi][2]
-    end_col = pages[hi][3]
-    if line_idx < end_line or (line_idx == end_line and col_idx <= end_col):
+    v, s_l, s_c, e_l, e_c = pages[hi]
+    if v == vol and (line_idx < e_l or (line_idx == e_l and col_idx <= e_c)):
         return hi
     else:
-        if hi + 1 < len(pages) and pages[hi+1][0] == line_idx:
-            return hi + 1
+        if hi + 1 < len(pages):
+            v2, s_l2, s_c2, e_l2, e_c2 = pages[hi+1]
+            if v2 == vol and s_l2 == line_idx:
+                return hi + 1
         return None
 #读写书签文件
 def load_bookmarks(book_name):
@@ -242,20 +287,25 @@ def load_bookmarks(book_name):
                 if not line:
                     continue
                 parts = line.split('\t')
-                if len(parts) >= 3:
-                    s_l = safe_int(parts[0])
-                    s_c = safe_int(parts[1])
-                    comment = '\t'.join(parts[2:])
-                    bookmarks.append((s_l, s_c, comment))
+                if len(parts) >= 4:
+                    vol = safe_int(parts[0])
+                    s_l = safe_int(parts[1])
+                    s_c = safe_int(parts[2])
+                    comment = '\t'.join(parts[3:])
+                    bookmarks.append((vol, s_l, s_c, comment))
+                elif len(parts) == 3: 
+                    s_l, s_c, comment = parts
+                    bookmarks.append((0, safe_int(s_l), safe_int(s_c), comment))
     except:
         pass
     return bookmarks
+
 def save_bookmarks(book_name, bookmarks):
     with open(book_name + "_bookmarks.txt", 'w', encoding='utf-8') as f:
-        for s_l, s_c, comment in bookmarks:
-            f.write(str(s_l) + "\t" + str(s_c) + "\t" + comment + "\n")
+        for vol, s_l, s_c, comment in bookmarks:
+            f.write(str(vol) + "\t" + str(s_l) + "\t" + str(s_c) + "\t" + comment + "\n")
 #添加书签
-def add_bookmark(book_name,current_page):
+def add_bookmark(book_name, current_page):
     data = load_list(book_name)
     eval('TXS:="书签"')
     if eval('INPUT({{P,[0]},{TXS,[2]}},"添加书签",{"页码","注释"},{"当前页码","输入注释内容"},{' + str(current_page+1) + '},{'+str(current_page+1)+'})') == 0:
@@ -264,14 +314,14 @@ def add_bookmark(book_name,current_page):
     if p_input < 1 or p_input > len(data["Pages"]):
         eval('MSGBOX("错误的输入！")')
         return
-    s_l, s_c, _, _ = data["Pages"][p_input - 1]
+    vol, s_l, s_c, _, _ = data["Pages"][p_input - 1]
     comment = eval('TXS').strip()
     if comment == "":
         eval('MSGBOX("注释不能为空！")')
         return
     bookmarks = load_bookmarks(book_name)
-    bookmarks.append((s_l, s_c, comment))
-    bookmarks.sort(key=lambda x: (x[0], x[1]))
+    bookmarks.append((vol, s_l, s_c, comment))
+    bookmarks.sort(key=lambda x: (x[0], x[1], x[2]))
     save_bookmarks(book_name, bookmarks)
     eval('MSGBOX("书签已添加！")')
     return
@@ -288,27 +338,27 @@ def manage_bookmarks(book_name):
         bookmarks = load_bookmarks(book_name)
         if bookmarks == []:
             return
-        for s_l, s_c, comment in bookmarks:
-            page_idx = find_page_by_coord(pages, s_l, s_c)
+        for vol, s_l, s_c, comment in bookmarks:
+            page_idx = find_page_by_coord(pages, vol, s_l, s_c)
             page_num = str(page_idx + 1) if page_idx is not None else "?"
             short = comment[:10] + ("..." if len(comment) > 10 else "")
             display_items.append("P%s %s" % (page_num, short))
         selected = show_list("书签列表", display_items, 0)
         if selected == -1:
             return
-        s_l, s_c, comment = bookmarks[selected]
-        page_idx = find_page_by_coord(pages, s_l, s_c)
+        vol, s_l, s_c, comment = bookmarks[selected]
+        page_idx = find_page_by_coord(pages, vol, s_l, s_c)
         opts = '"查看原文","查看注释","删除书签","返回"'
         while True:
-            if eval('CHOOSE(N,"书签('+ str(page_idx+1) + ')",' + opts + ')') == 0:
+            if eval('CHOOSE(N,"书签(P'+ str(page_idx+1) + ')",' + opts + ')') == 0:
                 continue
             choice = safe_int(eval('N'))
-            if choice == 1:  
+            if choice == 1:
                 jump_page(book_name, page_idx)
-            elif choice == 2: 
+            elif choice == 2:
                 safe_comment = comment.replace('"', '\\"')
                 eval('MSGBOX("' + safe_comment + '")')
-            elif choice == 3: 
+            elif choice == 3:
                 if eval('MSGBOX("确定删除该书签？",1)') == 0:
                     continue
                 del bookmarks[selected]
@@ -432,9 +482,14 @@ def load_list(book_name):
             continue
         if mode == "pages":
             parts = line.split()
-            if len(parts) == 4:
+            if len(parts) == 5:
+                vol, s_l, s_c, e_l, e_c = map(int, parts)
+            elif len(parts) == 4:  
                 s_l, s_c, e_l, e_c = map(int, parts)
-                data["Pages"].append((s_l, s_c, e_l, e_c))
+                vol = 0
+            else:
+                continue
+            data["Pages"].append((vol, s_l, s_c, e_l, e_c))
         elif mode == "contents":
             parts = line.split('\t')
             if len(parts) == 2:
@@ -449,84 +504,107 @@ def load_list(book_name):
     _index_cache = data
     return data
     
-def load_book_text(book_name):
-    global _text_cache, _text_cache_book
-    if _text_cache_book == book_name and _text_cache is not None:
+def load_book_text(book_name, vol):
+    global _text_cache, _text_cache_book, _text_cache_vol
+    if _text_cache_book == book_name and _text_cache_vol == vol and _text_cache is not None:
         return _text_cache
-    with open(book_name + "_book.txt", 'r', encoding='utf-8') as f:
-        lines = [line.rstrip('\n') for line in f]
+    fname = book_name + "(" + str(vol) + ")_book.txt"
+    try:
+        with open(fname, 'r', encoding='utf-8') as f:
+            lines = [line.rstrip('\n') for line in f]
+    except OSError:
+        if vol == 0:
+            fname = book_name + "_book.txt"
+            with open(fname, 'r', encoding='utf-8') as f:
+                lines = [line.rstrip('\n') for line in f]
+        else:
+            raise
+
     _text_cache_book = book_name
+    _text_cache_vol = vol
     _text_cache = lines
     return lines
 
 #阅读器主函数
-def start_read(book_name,page):
-    lines = load_book_text(book_name)
-    list = load_list(book_name)
-    max_page = len(list["Pages"])
+def start_read(book_name, page):
+    data = load_list(book_name)
+    pages = data["Pages"]
+    total_pages = len(pages)
+
+    current_vol = -1
+    lines_cache = None
+
     while True:
-        page_info = list["Pages"][page]
-        eval('"' + str(page_info[0]) + "," + str(page_info[1]) + '"▶AFiles("' + book_name + '_Post")')
+        vol, s_l, s_c, e_l, e_c = pages[page]  
+
+        if current_vol != vol:
+            lines_cache = load_book_text(book_name, vol)
+            current_vol = vol
+        eval('"' + str(vol) + "," + str(s_l) + "," + str(s_c) + '"▶AFiles("' + book_name + '_Post")')
+
         show_str = ""
-        if page_info[0] == page_info[2]:
-            show_str = lines[page_info[0]][page_info[1]:(page_info[3]+1)]
-            a,b = parse_ch_structure(show_str)
-            if not a == None:
-                show_str = a+' '+b
+        if s_l == e_l:  
+            show_str = lines_cache[s_l][s_c:(e_c+1)]
+            ch, title = parse_ch_structure(show_str)
+            if ch is not None:
+                show_str = ch + ' ' + title if ch else title
             elif show_str.startswith("[pic:"):
                 try:
                     pic_name = show_str[5:show_str.find(']')]
-                    picevent = show_pic(book_name+'  '+str(page+1)+'/'+str(max_page),pic_name,page,book_name)
+                    picevent = show_pic(book_name + '  ' + str(page+1) + '/' + str(total_pages),
+                                        pic_name, page, book_name)
                     if picevent == 0:
-                        return
+                        return  
                     elif picevent == -1:
-                        if not page == 0:
+                        if page > 0:
                             page -= 1
                         continue
                     elif picevent == 1:
-                        if not page == max_page -1:
+                        if page < total_pages - 1:
                             page += 1
                         continue
                 except KeyboardInterrupt:
                     raise
                 except:
-                    pass                
+                    pass
+                continue
         else:
             parts = []
-            parts.append(lines[page_info[0]][page_info[1]:])
-            a, b = parse_ch_structure(parts[0])
-            if a is not None:
-                parts[0] = a + ' ' + b
-            for i in range(page_info[0]+1, page_info[2]):
-                parts.append(lines[i])
-            parts.append(lines[page_info[2]][:(page_info[3]+1)])
+            first_line = lines_cache[s_l][s_c:]
+            ch, title = parse_ch_structure(first_line)
+            if ch is not None:
+                first_line = ch + ' ' + title if ch else title
+            parts.append(first_line)
+            for i in range(s_l+1, e_l):
+                parts.append(lines_cache[i])
+            last_line = lines_cache[e_l][:(e_c+1)]
+            parts.append(last_line)
             show_str = '\n'.join(parts)
-        show_text(show_str,book_name+'  '+str(page+1)+'/'+str(max_page))
+        show_text(show_str, book_name + '  ' + str(page+1) + '/' + str(total_pages))
         while True:
-            draw_time()
+            draw_time()   
             key_code = eval("WAIT(0)")
             if key_code == 30 or key_code == 12 or key_code == 8:
-                if not page == max_page - 1:
+                if page < total_pages - 1:
                     page += 1
                     break
-            if key_code == 2 or key_code ==  7:
-                if not page == 0:
-                    page -= 1 
+            elif key_code == 2 or key_code == 7:
+                if page > 0:
+                    page -= 1
                     break
-            if key_code == 4:
+            elif key_code == 4:
                 gc.collect()
                 return
-            if key_code == 3:
-                add_bookmark(book_name,page)
+            elif key_code == 3:
+                add_bookmark(book_name, page)
                 break
                 
-def jump_page(book_name,page):
+def jump_page(book_name, page):
     current_page = get_position(book_name)
     data = load_list(book_name)
-    s_l, s_c = data["Pages"][current_page][0], data["Pages"][current_page][1]
-    start_read(book_name,page)
-    eval('"' + str(s_l) + "," + str(s_c) + '"▶AFiles("' + book_name + '_Return")')
-    return
+    s_vol, s_l, s_c = data["Pages"][current_page][0], data["Pages"][current_page][1], data["Pages"][current_page][2]
+    start_read(book_name, page)
+    eval('"'+str(s_vol)+","+str(s_l)+","+str(s_c)+'"▶AFiles("'+book_name+'_Return")')
 
 def show_list(title,list,position):
     per_page = 10
@@ -570,13 +648,48 @@ def show_list(title,list,position):
 #书本选择菜单
 def get_book_list():
     files = eval('AFiles()')
+    book_vols = {}
+    for f in files:
+        if f.lower().endswith('_book.txt'):
+            base = f[:-9]  
+            if '(' in base and base.endswith(')'):
+                lpos = base.rfind('(')
+                rpos = base.rfind(')')
+                if lpos != -1 and rpos != -1 and lpos < rpos:
+                    num_str = base[lpos+1:rpos]
+                    if num_str.isdigit():
+                        prefix = base[:lpos]
+                        vol = int(num_str)   # 0-based
+                    else:
+                        prefix = base
+                        vol = 0
+                else:
+                    prefix = base
+                    vol = 0
+            else:
+                prefix = base
+                vol = 0
+            line_count = max_line(prefix, vol)
+            book_vols.setdefault(prefix, []).append((vol, line_count))
+
     txt_files = []
-    for i in files:
-        if i.lower().endswith('_book.txt'):
-            prefix = i.split("_")[0]
-            pos_str = eval('AFiles("'+prefix+'_Post")')
-            line, col = unpack_pos(pos_str)
-            txt_files.append((prefix,line,max_line(prefix)))
+    for prefix, vol_list in book_vols.items():
+        vol_list.sort()
+        total_lines = sum(v[1] for v in vol_list if v[1] is not None)
+        pos_str = eval('AFiles("'+prefix+'_Post")')
+        parts = pos_str.split(',')
+        if len(parts) == 3:
+            vol, line, col = parts
+            read_lines = 0
+            for v, lc in vol_list:
+                if v < int(vol):
+                    read_lines += lc
+                elif v == int(vol):
+                    read_lines += int(line)
+                    break
+        else:
+            read_lines = 0
+        txt_files.append((prefix, read_lines, total_lines))
     return txt_files
 
 def choose_book():
@@ -589,7 +702,7 @@ def choose_book():
     book_list = get_book_list()
     book_show = []
     for i in range(len(book_list)):
-        if book_list[i][2] != None and book_list[i][1] != None:
+        if not(book_list[i][2] == 0) and not(book_list[i][1] == 0):
             book_show.append("%04.1f%% " % (100*book_list[i][1]/book_list[i][2]) + book_list[i][0])
         else:
             book_show.append('00.0% ' + book_list[i][0])
@@ -640,46 +753,59 @@ def show_piclist(book_name):
 def search_book(book_name, keyword, start_page=0, end_page=None):
     data = load_list(book_name)
     pages = data["Pages"]
-    lines = load_book_text(book_name)
-    kw = keyword.strip()
-    if not kw:
+    total = len(pages)
+    if end_page is None or end_page >= total:
+        end_page = total - 1
+    start = max(0, start_page)
+    end = min(total - 1, end_page)
+    if start > end:
         return []
-    kw_lower = kw.lower()
-    kw_len = len(kw)
-    total_pages = len(pages)
-    if end_page is None or end_page >= total_pages:
-        end_page = total_pages - 1
-    start_page = max(0, start_page)
-    end_page = min(total_pages - 1, end_page)
-    if start_page > end_page:
-        return []
-    start_line = pages[start_page][0] 
-    end_line = pages[end_page][2]
+    files = eval('AFiles()')
+    vols = set()
+    for f in files:
+        if f.startswith(book_name) and f.endswith('_book.txt'):
+            base = f[:-9] 
+            if base == book_name:
+                vols.add(0)
+            else:
+                if '(' in base and base.endswith(')'):
+                    lpos = base.rfind('(')
+                    rpos = base.rfind(')')
+                    if lpos != -1 and rpos != -1 and lpos < rpos:
+                        num_str = base[lpos+1:rpos]
+                        if num_str.isdigit():
+                            vols.add(int(num_str))
+    vols = sorted(vols)
     results = []
     MAX_RESULTS = 200
-    for line_idx in range(start_line, end_line + 1):
-        line = lines[line_idx]
-        line_lower = line.lower()
-        search_start = 0
-        while True:
-            col_idx = line_lower.find(kw_lower, search_start)
-            if col_idx == -1:
-                break
-            page_idx = find_page_by_coord(pages, line_idx, col_idx)
-            if page_idx is not None and start_page <= page_idx <= end_page:
-                ctx_start = max(0, col_idx - 5)
-                ctx_end = min(len(line), col_idx + kw_len + 5)
-                raw_context = line[ctx_start:ctx_end]
-                kw_start_in_ctx = col_idx - ctx_start
-                kw_end_in_ctx = kw_start_in_ctx + kw_len
-                context = (raw_context[:kw_start_in_ctx] + '~' + raw_context[kw_end_in_ctx:])
-                results.append([page_idx + 1,[line_idx, col_idx, col_idx + kw_len],context])
-                if len(results) >= MAX_RESULTS:
-                    eval('MSGBOX("结果超过200条，仅显示前200条")')
-                    del lines, pages, data
-                    return results
-            search_start = col_idx + 1
-    del lines, pages, data
+    kw_lower = keyword.lower()
+    kw_len = len(keyword)
+    start_vol = pages[start][0]
+    end_vol = pages[end][0]
+    target_vols = [v for v in vols if start_vol <= v <= end_vol]
+
+    for vol in target_vols:
+        lines = load_book_text(book_name, vol)
+        for line_idx, line in enumerate(lines):
+            line_lower = line.lower()
+            search_start = 0
+            while True:
+                col_idx = line_lower.find(kw_lower, search_start)
+                if col_idx == -1:
+                    break
+                page_idx = find_page_by_coord(pages, vol, line_idx, col_idx)
+                if page_idx is not None and start <= page_idx <= end:
+                    ctx_start = max(0, col_idx - 5)
+                    ctx_end = min(len(line), col_idx + kw_len + 5)
+                    raw_context = line[ctx_start:ctx_end]
+                    kw_start_in_ctx = col_idx - ctx_start
+                    kw_end_in_ctx = kw_start_in_ctx + kw_len
+                    context = raw_context[:kw_start_in_ctx] + '~' + raw_context[kw_end_in_ctx:]
+                    results.append([page_idx + 1, [vol, line_idx, col_idx, col_idx+kw_len], context])
+                    if len(results) >= MAX_RESULTS:
+                        eval('MSGBOX("结果超过200条，仅显示前200条")')
+                        return results
+                search_start = col_idx + 1
     return results
 #展示检索结果
 def show_search(book_name, result):
@@ -757,10 +883,10 @@ while True:
                             continue
                         maxpage = max_page(book_name)
                         ret_str = eval('AFiles("'+book_name+'_Return")')
-                        line, col = unpack_pos(ret_str)
+                        vol,line, col = unpack_pos(ret_str)
                         if line is not None:
                             data = load_list(book_name)
-                            position = find_page_by_coord(data["Pages"], line, col)
+                            position = find_page_by_coord(data["Pages"],vol, line, col)
                         else:
                             position = 0
                         if eval('INPUT(N,"跳转页码","跳转到","范围：1-'+str(maxpage)+' (默认值：上次跳转前位置)",'+str(position+1)+','+str(position+1)+')') == 0:
@@ -799,6 +925,8 @@ while True:
     except KeyboardInterrupt:
         print('按下on键已退出')
         sys.exit(0)
+    except MemoryError:
+        eval('MSGBOX("内存不足！尝试按shift+plot调大Heap或使用更小的分卷尺寸后重启")')
     except Exception as e:
         print("发生错误：",repr(e),"程序退出")
         raise
